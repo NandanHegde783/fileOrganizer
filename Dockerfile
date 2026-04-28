@@ -1,12 +1,3 @@
-FROM python:3.12-slim AS builder
-
-WORKDIR /app
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
-
-
-# ── Runtime stage ─────────────────────────────────────────────────────────────
 FROM python:3.12-slim
 
 LABEL maintainer="fileOrganizer"
@@ -14,11 +5,10 @@ LABEL description="Smart File Organizer — sort, deduplicate, and schedule your
 
 WORKDIR /app
 
-# Copy installed deps from builder
-COPY --from=builder /install /usr/local
-
-# Copy the package source
-COPY . .
+# Copy the package into a subdirectory so `python -m fileOrganizer` resolves correctly.
+# The build context is the fileOrganizer/ folder, so we copy its contents
+# into /app/fileOrganizer/ inside the image.
+COPY . ./fileOrganizer/
 
 # Mount point for the host directory to organise
 VOLUME ["/data"]

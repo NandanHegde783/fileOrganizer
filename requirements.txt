@@ -1,1 +1,1 @@
-schedule
+# No third-party dependencies — stdlib only.

@@ -1,20 +1,14 @@
 """
 scheduler.py — Run the organizer on a recurring schedule.
 
-Uses the lightweight `schedule` library (pip install schedule).
-Falls back gracefully if the library is missing.
+Uses only Python's standard library (time, threading) — no third-party packages
+required.
 """
 
 from __future__ import annotations
 
 import time
 from pathlib import Path
-
-try:
-    import schedule
-    HAS_SCHEDULE = True
-except ImportError:
-    HAS_SCHEDULE = False
 
 
 # ---------------------------------------------------------------------------
@@ -29,6 +23,13 @@ _ALIASES: dict[str, tuple[str, int]] = {
     "every hour":  ("hours", 1),
     "every day":   ("days", 1),
     "every week":  ("weeks", 1),
+}
+
+_UNIT_TO_SECONDS: dict[str, int] = {
+    "minutes": 60,
+    "hours":   3_600,
+    "days":    86_400,
+    "weeks":   604_800,
 }
 
 
@@ -61,13 +62,18 @@ def parse_interval(interval: str) -> tuple[str, int]:
             pass
         else:
             unit = parts[1].rstrip("s") + "s"  # normalise to plural
-            if unit in ("minutes", "hours", "days", "weeks"):
+            if unit in _UNIT_TO_SECONDS:
                 return (unit, amount)
 
     raise ValueError(
         f"Cannot parse interval '{interval}'. "
         "Try: 'hourly', 'daily', 'weekly', 'every 30 minutes', 'every 2 hours', etc."
     )
+
+
+def _interval_seconds(unit: str, amount: int) -> int:
+    """Convert (unit, amount) to a total number of seconds."""
+    return _UNIT_TO_SECONDS[unit] * amount
 
 
 # ---------------------------------------------------------------------------
@@ -85,15 +91,11 @@ def run_scheduled(
     Run the organizer on *target* repeatedly according to *interval*.
     Blocks the calling thread (Ctrl-C to stop).
     """
-    if not HAS_SCHEDULE:
-        raise ImportError(
-            "The 'schedule' package is required for scheduling. "
-            "Install it with:  pip install schedule"
-        )
-
     from .organizer import organize, print_summary  # local import to avoid circularity
 
     unit, amount = parse_interval(interval)
+    sleep_secs = _interval_seconds(unit, amount)
+
     print(f"  Scheduler started — organising '{target}' every {amount} {unit}.")
     print("  Press Ctrl-C to stop.\n")
 
@@ -102,16 +104,12 @@ def run_scheduled(
         summary = organize(target, recursive=recursive, copy=copy)
         print_summary(summary)
 
-    # Wire up the schedule
-    job_fn = getattr(schedule.every(amount), unit)
-    job_fn.do(_job)
-
     # Run immediately on first invocation
     _job()
 
     try:
         while True:
-            schedule.run_pending()
-            time.sleep(1)
+            time.sleep(sleep_secs)
+            _job()
     except KeyboardInterrupt:
         print("\n  Scheduler stopped.")

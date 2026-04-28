@@ -1,6 +1,6 @@
 # Smart File Organizer
 
-A Python CLI tool that **automatically sorts files into categorized folders**, detects duplicates, and supports scheduled auto-cleanup.
+A Python CLI tool that **automatically sorts files into categorized folders**, detects duplicates, and supports scheduled auto-cleanup. Runs natively or inside Docker — no external dependencies required.
 
 ## Features
 
@@ -14,47 +14,123 @@ A Python CLI tool that **automatically sorts files into categorized folders**, d
 | ⏱️ Scheduler | Run automatically on a schedule (`hourly`, `daily`, `every 30 minutes`, …) |
 | 🔄 Recursive | Optionally organise subdirectories too |
 | 📋 Summary | Clear report of files moved, skipped, and errors |
+| 🐳 Docker | Fully containerised — stdlib only, no pip install needed |
 
-## Installation
+---
+
+## Quick Start (Docker) — Recommended
+
+### 1. Prerequisites
+
+Make sure your user can run Docker without `sudo`:
 
 ```bash
-cd NewProject
-pip install -r file_organizer/requirements.txt
+sudo usermod -aG docker $USER
+newgrp docker   # apply without logging out
 ```
 
-## Usage
+### 2. Build the image
 
 ```bash
+cd NewProject/fileOrganizer
+./build.sh
+```
+
+### 3. Run
+
+```bash
+# Preview changes (dry-run)
+./run.sh ~/Downloads --dry-run
+
+# Organise your Downloads folder
+./run.sh ~/Downloads
+
+# Recursive + copy mode
+./run.sh ~/Downloads --recursive --copy
+
+# Detect duplicates
+./run.sh ~/Downloads --detect-dupes
+
+# Delete duplicates (keeps oldest, asks for confirmation)
+./run.sh ~/Downloads --delete-dupes
+
+# Undo the last run
+./run.sh ~/Downloads --undo
+
+# Run on a schedule (blocks; Ctrl-C to stop)
+./run.sh ~/Downloads --schedule daily
+./run.sh ~/Downloads --schedule "every 30 minutes"
+```
+
+> The container mounts your host directory as `/data` and is removed automatically after each run (`--rm`).
+
+---
+
+## Local (No Docker)
+
+No external packages needed — stdlib only.
+
+```bash
+cd NewProject/fileOrganizer
+
 # Organise current directory
-python -m file_organizer .
+python -m fileOrganizer .
 
 # Organise a specific folder
-python -m file_organizer ~/Downloads
+python -m fileOrganizer ~/Downloads
 
 # Preview without making changes
-python -m file_organizer ~/Downloads --dry-run
+python -m fileOrganizer ~/Downloads --dry-run
 
-# Organise recursively (including subdirectories)
-python -m file_organizer ~/Downloads --recursive
+# Organise recursively
+python -m fileOrganizer ~/Downloads --recursive
 
 # Copy instead of move
-python -m file_organizer ~/Downloads --copy
+python -m fileOrganizer ~/Downloads --copy
 
 # Undo last organize
-python -m file_organizer ~/Downloads --undo
+python -m fileOrganizer ~/Downloads --undo
 
 # Find duplicate files
-python -m file_organizer ~/Downloads --detect-dupes
+python -m fileOrganizer ~/Downloads --detect-dupes
 
-# Find AND delete duplicates (with confirmation)
-python -m file_organizer ~/Downloads --delete-dupes
+# Find AND delete duplicates
+python -m fileOrganizer ~/Downloads --delete-dupes
 
-# Schedule: organise every day automatically
-python -m file_organizer ~/Downloads --schedule daily
+# Schedule: organise every day
+python -m fileOrganizer ~/Downloads --schedule daily
 
 # Schedule: every 30 minutes
-python -m file_organizer ~/Downloads --schedule "every 30 minutes"
+python -m fileOrganizer ~/Downloads --schedule "every 30 minutes"
 ```
+
+---
+
+## CLI Reference
+
+```
+usage: fileOrganizer [TARGET_DIR] [OPTIONS]
+
+positional arguments:
+  TARGET_DIR            Directory to organise (default: current directory)
+
+Organisation:
+  --recursive, -r       Also organise files in subdirectories
+  --copy, -c            Copy files instead of moving them
+  --dry-run, -n         Preview what would happen without making any changes
+  --undo                Reverse the last organize operation
+
+Duplicates:
+  --detect-dupes        Scan for duplicate files and print a report
+  --delete-dupes        Delete duplicate files (keeps oldest). Implies --detect-dupes
+
+Scheduler:
+  --schedule INTERVAL   Run organizer repeatedly on an interval.
+                        E.g. 'hourly', 'daily', 'weekly',
+                             'every 30 minutes', 'every 2 hours'
+```
+
+---
 
 ## File Type Mappings
 
@@ -70,31 +146,36 @@ python -m file_organizer ~/Downloads --schedule "every 30 minutes"
 | **Fonts** | `.ttf`, `.otf`, `.woff`, `.woff2` |
 | **Misc** | Everything else |
 
-> **Extending:** Add new mappings in `file_organizer/config.py` — no logic changes needed.
+> **Extending:** Add new mappings in `config.py` — no logic changes needed.
+
+---
 
 ## Project Structure
 
 ```
-file_organizer/
+fileOrganizer/
 ├── __init__.py            # Public API
 ├── __main__.py            # CLI entry point
 ├── config.py              # Extension → folder mapping
-├── organizer.py           # Core sort, move/copy, undo
+├── organizer.py           # Core sort, move/copy, undo logic
 ├── duplicate_detector.py  # SHA-256 duplicate detection
-├── scheduler.py           # Recurring schedule support
-└── requirements.txt       # schedule (only external dep)
-tests/
-├── test_organizer.py
-└── test_duplicate_detector.py
+├── scheduler.py           # Recurring schedule (stdlib time.sleep)
+├── requirements.txt       # No external dependencies
+├── Dockerfile             # Single-stage, no pip install
+├── build.sh               # Build the Docker image
+└── run.sh                 # Run the container against a host directory
 ```
 
-## Running Tests
-
-```bash
-pip install pytest
-pytest tests/ -v
-```
+---
 
 ## How Undo Works
 
-Every organize run writes a `.organizer_undo.json` log inside the target directory. When you run `--undo`, it reads this log and moves files back to their original locations, then removes the log.
+Every organize run writes a `.organizer_undo.json` log inside the target directory. Running `--undo` reads that log and moves every file back to its original location, then removes the log.
+
+---
+
+## How Duplicate Detection Works
+
+Files are fingerprinted with **SHA-256** (content hash). Two files are duplicates only if their content is byte-for-byte identical — file names are irrelevant. When deleting, the **oldest** file (by creation/modification time) is kept and all newer copies are removed.
+
+> Large files are hashed in 64 KB chunks to keep memory usage flat regardless of file size.
